@@ -1,4 +1,477 @@
-<!doctype html>
-<title>comet-swing</title>
-<h1>comet-swing</h1>
-<p>Scaffolded by deploymill. Replace this page with your app.</p>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#070912">
+<title>Comet Swing</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;overflow:hidden;background:#070912;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    color:#e8ecff;touch-action:none;-webkit-user-select:none;user-select:none;}
+  #game{display:block;width:100vw;height:100vh;cursor:pointer;}
+  .overlay{position:fixed;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;padding:24px;
+    background:radial-gradient(120% 90% at 50% 30%,rgba(20,28,60,.55),rgba(7,9,18,.92));
+    backdrop-filter:blur(2px);z-index:10;}
+  .hidden{display:none!important;}
+  h1{font-size:clamp(34px,11vw,72px);font-weight:800;letter-spacing:-.03em;
+    background:linear-gradient(120deg,#7af6ff,#9d8bff 55%,#ff8bd0);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    margin-bottom:6px;line-height:1;}
+  .tag{font-size:clamp(13px,3.6vw,16px);color:#aab2d8;max-width:340px;margin-bottom:26px;line-height:1.5;}
+  .tag b{color:#7af6ff;font-weight:600;}
+  .btn{font-size:18px;font-weight:700;padding:15px 40px;border:none;border-radius:999px;
+    color:#0a0d1a;background:linear-gradient(120deg,#7af6ff,#9d8bff);cursor:pointer;
+    box-shadow:0 0 30px rgba(125,180,255,.45);transition:transform .12s;}
+  .btn:active{transform:scale(.95);}
+  .how{margin-top:22px;font-size:12.5px;color:#7e88b4;line-height:1.7;max-width:300px;}
+  .how span{color:#bfc7ee;}
+  .stat{font-size:clamp(15px,4vw,18px);color:#cdd4f5;margin:2px 0;}
+  .stat b{color:#7af6ff;font-size:1.45em;}
+  .hud{position:fixed;top:0;left:0;right:0;padding:14px 18px;z-index:5;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    font-variant-numeric:tabular-nums;pointer-events:none;
+    padding-top:max(14px,env(safe-area-inset-top));}
+  .hud .h{font-size:30px;font-weight:800;line-height:1;
+    text-shadow:0 0 18px rgba(125,200,255,.5);}
+  .hud .h small{font-size:13px;font-weight:600;color:#8f98c4;margin-left:4px;}
+  .combo{text-align:right;font-weight:800;font-size:22px;
+    color:#ffd36b;text-shadow:0 0 16px rgba(255,180,80,.6);
+    opacity:0;transition:opacity .2s;}
+  .combo.on{opacity:1;}
+  .speedwrap{position:fixed;left:18px;right:18px;bottom:max(16px,env(safe-area-inset-bottom));
+    z-index:5;pointer-events:none;}
+  .speedbar{height:6px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;}
+  .speedfill{height:100%;width:0;border-radius:99px;
+    background:linear-gradient(90deg,#5b6cff,#7af6ff);transition:width .08s,background .25s;}
+  .speedfill.fast{background:linear-gradient(90deg,#ffb14d,#ff5fa2);box-shadow:0 0 14px rgba(255,140,90,.8);}
+  .lbl{font-size:10px;letter-spacing:.18em;color:#6a73a0;text-transform:uppercase;margin-bottom:6px;text-align:center;}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div class="hud hidden" id="hud">
+  <div class="h" id="height">0<small>M</small></div>
+  <div class="combo" id="combo">x2</div>
+</div>
+<div class="speedwrap hidden" id="speedwrap">
+  <div class="lbl" id="speedlbl">momentum</div>
+  <div class="speedbar"><div class="speedfill" id="speedfill"></div></div>
+</div>
+
+<div class="overlay" id="start">
+  <h1>COMET&nbsp;SWING</h1>
+  <p class="tag">Swing higher. <b>Speed is safety.</b> Move fast enough and you become a comet that smashes through hazards — slow down and they end you.</p>
+  <button class="btn" id="startBtn">Tap to Swing</button>
+  <div class="how">
+    <span>Press &amp; hold</span> to grapple the nearest anchor toward your finger<br>
+    <span>Release</span> to fling. Sweep the glowing motes for combo.
+  </div>
+</div>
+
+<div class="overlay hidden" id="over">
+  <h1 id="overTitle">WIPED OUT</h1>
+  <p class="stat">Height <b id="finalH">0</b> m</p>
+  <p class="stat" id="bestLine">Best <b id="bestH">0</b> m</p>
+  <p class="stat" style="color:#ffd36b;margin-top:8px;">Motes <b id="finalM" style="color:#ffd36b;">0</b></p>
+  <button class="btn" id="againBtn" style="margin-top:26px;">Swing Again</button>
+</div>
+
+<script>
+(function(){
+"use strict";
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+let W=0,H=0,DPR=1;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W*DPR; cv.height = H*DPR;
+  cv.style.width = W+'px'; cv.style.height = H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize); resize();
+
+const el = {
+  hud:document.getElementById('hud'), height:document.getElementById('height'),
+  combo:document.getElementById('combo'),
+  speedwrap:document.getElementById('speedwrap'), speedfill:document.getElementById('speedfill'),
+  speedlbl:document.getElementById('speedlbl'),
+  start:document.getElementById('start'), startBtn:document.getElementById('startBtn'),
+  over:document.getElementById('over'), again:document.getElementById('againBtn'),
+  finalH:document.getElementById('finalH'), bestH:document.getElementById('bestH'),
+  finalM:document.getElementById('finalM'), overTitle:document.getElementById('overTitle'),
+};
+
+const G = 1750;
+const FAST = 760;
+const PULL = 95;
+const GRAB_RANGE = 0.78;
+const MOTE_R = 16;
+
+let best = 0;
+try{ best = parseInt(localStorage.getItem('cometswing_best')||'0',10)||0; }catch(e){}
+
+let orb, anchors, motes, hazards, particles, camY, score, motesGot, combo, comboTimer, comboBest;
+let holding=false, ropeLen=0, hookA=null, state='menu', shake=0, flash=0;
+let pointer={x:0,y:0};
+let topBand=0;
+const BAND=320;
+let bottomKill=0;
+
+function reset(){
+  orb = {x:W/2, y:0, vx:0, vy:0, r:11, trail:[]};
+  anchors=[]; motes=[]; hazards=[]; particles=[];
+  camY = orb.y - H*0.62;
+  score=0; motesGot=0; combo=1; comboTimer=0; comboBest=1;
+  holding=false; hookA=null; shake=0; flash=0;
+  bottomKill = orb.y + H*0.9;
+  topBand = 0;
+  anchors.push({x:W/2, y:orb.y-150, born:0, life:Infinity, used:false, base:true});
+  topBand = orb.y - 150;
+  for(let i=0;i<8;i++) genBand();
+}
+
+function genBand(){
+  topBand -= BAND;
+  const n = 1 + (Math.random()<0.65?1:0);
+  for(let i=0;i<n;i++){
+    anchors.push({
+      x: 40 + Math.random()*(W-80),
+      y: topBand + (Math.random()-0.5)*BAND*0.6,
+      born: performance.now(), life: Infinity, used:false
+    });
+  }
+  const m = Math.random()<0.8?1:0;
+  for(let i=0;i<m;i++){
+    motes.push({x:40+Math.random()*(W-80), y:topBand+(Math.random()-0.5)*BAND, got:false, ph:Math.random()*6.28});
+  }
+  const depth = (orb? -topBand:0);
+  if(depth>900 && Math.random()<0.55){
+    const isSaw = Math.random()<0.6;
+    hazards.push({
+      x:60+Math.random()*(W-120), y:topBand+(Math.random()-0.5)*BAND*0.5,
+      r: isSaw?26:20, rot:Math.random()*6.28, saw:isSaw, dead:false,
+      dx:(Math.random()<0.5?-1:1)*(isSaw?0:30+Math.random()*40)
+    });
+  }
+}
+
+function maxRange(){ return Math.min(W,H)*GRAB_RANGE + 60; }
+
+function tryGrab(){
+  const R = maxRange();
+  let best=null, bestD=Infinity;
+  for(const a of anchors){
+    const dox=a.x-orb.x, doy=a.y-orb.y;
+    const dOrb=Math.hypot(dox,doy);
+    if(dOrb>R) continue;
+    if(a.y > orb.y+40) continue;
+    const dp=Math.hypot(a.x-pointer.x,a.y-pointer.y);
+    if(dp<bestD){bestD=dp;best=a;}
+  }
+  if(best){
+    hookA=best; holding=true; best.used=true;
+    if(best.life===Infinity && !best.base) best.life = 2600;
+    ropeLen = Math.max(60, Math.hypot(best.x-orb.x,best.y-orb.y));
+  }
+}
+function release(){ holding=false; hookA=null; }
+
+function setPointer(e){
+  const t = e.touches? e.touches[0]:e;
+  if(!t) return;
+  pointer.x=t.clientX; pointer.y=t.clientY;
+}
+function down(e){
+  if(state!=='play') return;
+  e.preventDefault(); setPointer(e); tryGrab();
+}
+function move(e){ if(state==='play'){ setPointer(e);} }
+function up(e){ if(state==='play'){ release(); } }
+cv.addEventListener('mousedown',down); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+cv.addEventListener('touchstart',down,{passive:false}); cv.addEventListener('touchmove',function(e){e.preventDefault();move(e);},{passive:false}); cv.addEventListener('touchend',up);
+
+function start(){ resize(); reset(); state='play';
+  el.start.classList.add('hidden'); el.over.classList.add('hidden');
+  el.hud.classList.remove('hidden'); el.speedwrap.classList.remove('hidden');
+}
+function gameOver(){
+  state='over';
+  for(let i=0;i<24;i++) burst(orb.x,orb.y,['#ff5fa2','#ffb14d','#7af6ff'][i%3]);
+  shake=18; flash=1;
+  const h=Math.max(0,Math.floor(-score/10));
+  if(h>best){ best=h; try{localStorage.setItem('cometswing_best',String(h));}catch(e){} }
+  el.finalH.textContent=h; el.bestH.textContent=best; el.finalM.textContent=motesGot;
+  el.overTitle.textContent = h>0 && h>=best ? 'NEW BEST!' : 'WIPED OUT';
+  el.hud.classList.add('hidden'); el.speedwrap.classList.add('hidden');
+  setTimeout(()=>el.over.classList.remove('hidden'),360);
+}
+el.startBtn.addEventListener('click',start);
+el.again.addEventListener('click',start);
+
+function burst(x,y,c){
+  particles.push({x,y,vx:(Math.random()-.5)*420,vy:(Math.random()-.5)*420,life:1,c});
+}
+
+let last=performance.now();
+function frame(now){
+  let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
+  if(state==='play') update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+
+function update(dt){
+  const o=orb;
+  o.vy += G*dt;
+  if(holding && hookA){
+    ropeLen = Math.max(48, ropeLen - PULL*dt);
+  }
+  o.x += o.vx*dt; o.y += o.vy*dt;
+
+  if(holding && hookA){
+    const dx=o.x-hookA.x, dy=o.y-hookA.y;
+    const d=Math.hypot(dx,dy)||0.0001;
+    if(d>ropeLen){
+      const nx=dx/d, ny=dy/d;
+      o.x=hookA.x+nx*ropeLen; o.y=hookA.y+ny*ropeLen;
+      const radial=o.vx*nx+o.vy*ny;
+      o.vx-=radial*nx; o.vy-=radial*ny;
+    }
+  }
+
+  const speed=Math.hypot(o.vx,o.vy);
+  const fast = speed>=FAST;
+
+  o.trail.push({x:o.x,y:o.y,fast});
+  if(o.trail.length>22) o.trail.shift();
+
+  if(o.y<score) score=o.y;
+
+  const targetCam = o.y - H*0.62;
+  camY += (targetCam-camY)*Math.min(1,dt*6);
+
+  const depth=-score;
+  const camBottom = camY + H;
+  const desiredKill = camBottom + 30;
+  if(desiredKill < bottomKill) bottomKill = desiredKill;
+
+  while(topBand > camY - H*1.5) genBand();
+
+  for(const a of anchors){
+    if(a.life!==Infinity){ a.life -= dt*1000; }
+  }
+  anchors = anchors.filter(a=> a.life>0 && a.y < camY+H+200);
+  if(hookA && hookA.life<=0){ release(); }
+
+  for(const m of motes){
+    if(m.got) continue;
+    if(Math.hypot(m.x-o.x,m.y-o.y) < MOTE_R+o.r+6){
+      m.got=true; motesGot++;
+      combo++; comboBest=Math.max(comboBest,combo); comboTimer=2.2;
+      for(let i=0;i<8;i++) burst(m.x,m.y,'#ffd36b');
+      flash=Math.min(1,flash+0.25);
+    }
+  }
+  motes = motes.filter(m=>!m.got && m.y<camY+H+120);
+  if(comboTimer>0){ comboTimer-=dt; if(comboTimer<=0) combo=1; }
+
+  for(const hz of hazards){
+    if(hz.dead) continue;
+    hz.rot += (hz.saw?6: hz.dx*0.04)*dt + (hz.saw?0.12:0);
+    hz.x += (hz.dx||0)*dt;
+    if(hz.x<40||hz.x>W-40) hz.dx*=-1;
+    const dd=Math.hypot(hz.x-o.x,hz.y-o.y);
+    if(dd < hz.r+o.r){
+      if(fast){
+        hz.dead=true;
+        for(let i=0;i<14;i++) burst(hz.x,hz.y, hz.saw?'#ff5fa2':'#9d8bff');
+        shake=8; flash=Math.min(1,flash+0.4);
+        o.vx*=0.86; o.vy*=0.86;
+      } else {
+        return gameOver();
+      }
+    }
+  }
+  hazards = hazards.filter(h=>!h.dead && h.y<camY+H+200);
+
+  if(o.x<o.r){o.x=o.r; o.vx=Math.abs(o.vx)*0.5;}
+  if(o.x>W-o.r){o.x=W-o.r; o.vx=-Math.abs(o.vx)*0.5;}
+
+  if(o.y > bottomKill) return gameOver();
+
+  for(const p of particles){ p.vy+=600*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.life-=dt*1.6; }
+  particles=particles.filter(p=>p.life>0);
+
+  if(shake>0) shake=Math.max(0,shake-dt*40);
+  if(flash>0) flash=Math.max(0,flash-dt*2.2);
+
+  el.height.innerHTML = Math.max(0,Math.floor(depth/10))+'<small>M</small>';
+  const sp=Math.min(1,speed/FAST);
+  el.speedfill.style.width=(sp*100)+'%';
+  if(fast){ el.speedfill.classList.add('fast'); el.speedlbl.textContent='comet · invincible'; el.speedlbl.style.color='#ffb14d'; }
+  else{ el.speedfill.classList.remove('fast'); el.speedlbl.textContent='momentum'; el.speedlbl.style.color='#6a73a0'; }
+  if(combo>1){ el.combo.classList.add('on'); el.combo.textContent='x'+combo; }
+  else el.combo.classList.remove('on');
+}
+
+function draw(){
+  ctx.save();
+  let sx=0,sy=0;
+  if(shake>0){ sx=(Math.random()-.5)*shake; sy=(Math.random()-.5)*shake; }
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#0a0e1f'); g.addColorStop(1,'#05060e');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  drawStars();
+
+  ctx.translate(sx, sy - camY);
+
+  if(state==='play'||state==='over'){
+    drawKillLine();
+    drawAnchors();
+    drawMotes();
+    drawHazards();
+    drawRope();
+    drawOrb();
+    drawParticles();
+  }
+  ctx.restore();
+
+  if(flash>0){ ctx.fillStyle='rgba(255,255,255,'+(flash*0.5)+')'; ctx.fillRect(0,0,W,H); }
+}
+
+let stars=null;
+function drawStars(){
+  if(!stars){ stars=[]; for(let i=0;i<70;i++) stars.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.4+0.3,p:Math.random()}); }
+  for(const s of stars){
+    const yy=( (s.y - camY*0.15)%(H+40)+H+40)%(H+40)-20;
+    ctx.globalAlpha=0.4+0.5*s.p;
+    ctx.fillStyle='#aebbff'; ctx.beginPath(); ctx.arc(s.x,yy,s.r,0,6.283); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+function drawKillLine(){
+  const y=bottomKill;
+  const grd=ctx.createLinearGradient(0,y,0,y+H);
+  grd.addColorStop(0,'rgba(255,60,90,0.0)');
+  grd.addColorStop(0.25,'rgba(180,30,70,0.35)');
+  grd.addColorStop(1,'rgba(120,10,40,0.85)');
+  ctx.fillStyle=grd; ctx.fillRect(0,y,W,H);
+  ctx.strokeStyle='rgba(255,90,120,0.7)'; ctx.lineWidth=2;
+  ctx.beginPath();
+  for(let x=0;x<=W;x+=16){ ctx.lineTo(x, y+Math.sin((x*0.05)+performance.now()*0.004)*5); }
+  ctx.stroke();
+}
+
+function drawAnchors(){
+  const t=performance.now();
+  for(const a of anchors){
+    const decaying = a.life!==Infinity;
+    const frac = decaying? Math.max(0,a.life/2600):1;
+    const pulse=0.5+0.5*Math.sin(t*0.005+a.x);
+    const col = a.base? '#7af6ff' : decaying? '#ff9d6b':'#9d8bff';
+    ctx.save();
+    ctx.globalAlpha = decaying? 0.4+0.6*frac : 1;
+    ctx.shadowColor=col; ctx.shadowBlur=14+pulse*8;
+    ctx.fillStyle=col;
+    ctx.beginPath(); ctx.arc(a.x,a.y,6,0,6.283); ctx.fill();
+    ctx.shadowBlur=0; ctx.globalAlpha=(decaying?frac:1)*0.35;
+    ctx.strokeStyle=col; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(a.x,a.y,12+pulse*3,0,6.283); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawMotes(){
+  const t=performance.now()*0.004;
+  for(const m of motes){
+    if(m.got)continue;
+    const bob=Math.sin(t+m.ph)*4;
+    ctx.save();
+    ctx.shadowColor='#ffd36b'; ctx.shadowBlur=16;
+    ctx.fillStyle='#ffd36b';
+    ctx.beginPath();
+    for(let i=0;i<5;i++){
+      const ang=-Math.PI/2 + i*2*Math.PI/5;
+      const ar=ang+Math.PI/5;
+      ctx.lineTo(m.x+Math.cos(ang)*9, m.y+bob+Math.sin(ang)*9);
+      ctx.lineTo(m.x+Math.cos(ar)*4, m.y+bob+Math.sin(ar)*4);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawHazards(){
+  for(const hz of hazards){
+    if(hz.dead)continue;
+    ctx.save(); ctx.translate(hz.x,hz.y); ctx.rotate(hz.rot);
+    if(hz.saw){
+      ctx.fillStyle='#ff5fa2'; ctx.shadowColor='#ff5fa2'; ctx.shadowBlur=12;
+      const teeth=8;
+      ctx.beginPath();
+      for(let i=0;i<teeth;i++){
+        const a=i*2*Math.PI/teeth;
+        ctx.lineTo(Math.cos(a)*hz.r, Math.sin(a)*hz.r);
+        const a2=a+Math.PI/teeth;
+        ctx.lineTo(Math.cos(a2)*hz.r*0.62, Math.sin(a2)*hz.r*0.62);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#1a0d16'; ctx.beginPath(); ctx.arc(0,0,hz.r*0.32,0,6.283); ctx.fill();
+    } else {
+      ctx.fillStyle='#9d8bff'; ctx.shadowColor='#9d8bff'; ctx.shadowBlur=12;
+      ctx.beginPath();
+      for(let i=0;i<3;i++){ const a=-Math.PI/2+i*2*Math.PI/3; ctx.lineTo(Math.cos(a)*hz.r,Math.sin(a)*hz.r); }
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+function drawRope(){
+  if(!holding||!hookA)return;
+  ctx.strokeStyle='rgba(180,230,255,0.85)'; ctx.lineWidth=2;
+  ctx.shadowColor='#7af6ff'; ctx.shadowBlur=8;
+  ctx.beginPath(); ctx.moveTo(hookA.x,hookA.y); ctx.lineTo(orb.x,orb.y); ctx.stroke();
+  ctx.shadowBlur=0;
+}
+
+function drawOrb(){
+  const o=orb;
+  const speed=Math.hypot(o.vx,o.vy);
+  const fast=speed>=FAST;
+  for(let i=0;i<o.trail.length;i++){
+    const p=o.trail[i]; const a=i/o.trail.length;
+    ctx.globalAlpha=a*0.5;
+    ctx.fillStyle=p.fast?'#ffb14d':'#7af6ff';
+    ctx.beginPath(); ctx.arc(p.x,p.y,o.r*a*0.9,0,6.283); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  ctx.shadowColor=fast?'#ffb14d':'#7af6ff'; ctx.shadowBlur=fast?34:18;
+  const grd=ctx.createRadialGradient(o.x,o.y,1,o.x,o.y,o.r*1.6);
+  if(fast){ grd.addColorStop(0,'#fff'); grd.addColorStop(0.5,'#ffd36b'); grd.addColorStop(1,'#ff7a3c'); }
+  else{ grd.addColorStop(0,'#fff'); grd.addColorStop(0.5,'#aef0ff'); grd.addColorStop(1,'#4aa6ff'); }
+  ctx.fillStyle=grd;
+  ctx.beginPath(); ctx.arc(o.x,o.y,o.r,0,6.283); ctx.fill();
+  ctx.shadowBlur=0;
+}
+
+function drawParticles(){
+  for(const p of particles){
+    ctx.globalAlpha=Math.max(0,p.life);
+    ctx.fillStyle=p.c;
+    ctx.beginPath(); ctx.arc(p.x,p.y,3*p.life+1,0,6.283); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

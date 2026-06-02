@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "name": "comet-swing",
+  "workload": "web",
+  "port": 80,
+  "domains": {
+    "prod": "comet-swing-detzel.deploymill.app"
+  },
+  "mounts": [],
+  "rollback": false,
+  "health": {
+    "path": "/healthz",
+    "retries": 3,
+    "intervalMs": 3000,
+    "timeoutMs": 5000
+  }
+}

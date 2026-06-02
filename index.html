@@ -67,8 +67,8 @@
   <p class="tag">Swing higher. <b>Speed is safety.</b> Move fast enough and you become a comet that smashes through hazards — slow down and they end you.</p>
   <button class="btn" id="startBtn">Tap to Swing</button>
   <div class="how">
-    <span>Press &amp; hold</span> to grapple the nearest anchor toward your finger<br>
-    <span>Release</span> to fling. Sweep the glowing motes for combo.
+    <span>Hold</span> to grapple, and drag your finger to the side<br>you want to swing toward to build momentum.<br>
+    <span>Release</span> to fling. Sweep glowing motes for combo.
   </div>
 </div>
 
@@ -95,6 +95,7 @@ function resize(){
 }
 window.addEventListener('resize', resize); resize();
 
+// ---------- elements ----------
 const el = {
   hud:document.getElementById('hud'), height:document.getElementById('height'),
   combo:document.getElementById('combo'),
@@ -106,21 +107,24 @@ const el = {
   finalM:document.getElementById('finalM'), overTitle:document.getElementById('overTitle'),
 };
 
-const G = 1750;
-const FAST = 760;
-const PULL = 95;
-const GRAB_RANGE = 0.78;
+// ---------- tuning ----------
+const G = 1500;             // gravity px/s^2
+const FAST = 700;           // speed threshold to become a comet
+const PUMP = 3200;          // tangential thrust while steering (px/s^2)
+const MAXTAN = 1250;        // cap on tangential speed from pumping
+const GRAB_RANGE = 0.82;
 const MOTE_R = 16;
 
 let best = 0;
 try{ best = parseInt(localStorage.getItem('cometswing_best')||'0',10)||0; }catch(e){}
 
+// ---------- world ----------
 let orb, anchors, motes, hazards, particles, camY, score, motesGot, combo, comboTimer, comboBest;
 let holding=false, ropeLen=0, hookA=null, state='menu', shake=0, flash=0;
 let pointer={x:0,y:0};
-let topBand=0;
-const BAND=320;
-let bottomKill=0;
+let topBand=0;              // highest world-y for which we've generated content (smaller y = higher)
+const BAND=320;             // vertical spacing of generated bands
+let bottomKill=0;           // rising death line (world y); orb falling below dies
 
 function reset(){
   orb = {x:W/2, y:0, vx:0, vy:0, r:11, trail:[]};
@@ -130,6 +134,7 @@ function reset(){
   holding=false; hookA=null; shake=0; flash=0;
   bottomKill = orb.y + H*0.9;
   topBand = 0;
+  // seed a starting anchor right above so first grab is easy
   anchors.push({x:W/2, y:orb.y-150, born:0, life:Infinity, used:false, base:true});
   topBand = orb.y - 150;
   for(let i=0;i<8;i++) genBand();
@@ -137,7 +142,7 @@ function reset(){
 
 function genBand(){
   topBand -= BAND;
-  const n = 1 + (Math.random()<0.65?1:0);
+  const n = 1 + (Math.random()<0.65?1:0); // 1-2 anchors per band
   for(let i=0;i<n;i++){
     anchors.push({
       x: 40 + Math.random()*(W-80),
@@ -145,10 +150,12 @@ function genBand(){
       born: performance.now(), life: Infinity, used:false
     });
   }
+  // motes
   const m = Math.random()<0.8?1:0;
   for(let i=0;i<m;i++){
     motes.push({x:40+Math.random()*(W-80), y:topBand+(Math.random()-0.5)*BAND, got:false, ph:Math.random()*6.28});
   }
+  // hazards begin after some height
   const depth = (orb? -topBand:0);
   if(depth>900 && Math.random()<0.55){
     const isSaw = Math.random()<0.6;
@@ -163,24 +170,25 @@ function genBand(){
 function maxRange(){ return Math.min(W,H)*GRAB_RANGE + 60; }
 
 function tryGrab(){
+  // grab the anchor closest to the pointer, within range of the orb
   const R = maxRange();
   let best=null, bestD=Infinity;
   for(const a of anchors){
-    const dox=a.x-orb.x, doy=a.y-orb.y;
-    const dOrb=Math.hypot(dox,doy);
+    const dOrb=Math.hypot(a.x-orb.x, a.y-orb.y);
     if(dOrb>R) continue;
-    if(a.y > orb.y+40) continue;
+    if(a.y > orb.y+90) continue;      // anchor must be above-ish
     const dp=Math.hypot(a.x-pointer.x,a.y-pointer.y);
     if(dp<bestD){bestD=dp;best=a;}
   }
   if(best){
     hookA=best; holding=true; best.used=true;
-    if(best.life===Infinity && !best.base) best.life = 2600;
-    ropeLen = Math.max(60, Math.hypot(best.x-orb.x,best.y-orb.y));
+    if(best.life===Infinity && !best.base) best.life = 3200; // decay once used
+    ropeLen = Math.max(70, Math.hypot(best.x-orb.x,best.y-orb.y));
   }
 }
 function release(){ holding=false; hookA=null; }
 
+// ---------- input ----------
 function setPointer(e){
   const t = e.touches? e.touches[0]:e;
   if(!t) return;
@@ -206,17 +214,19 @@ function gameOver(){
   const h=Math.max(0,Math.floor(-score/10));
   if(h>best){ best=h; try{localStorage.setItem('cometswing_best',String(h));}catch(e){} }
   el.finalH.textContent=h; el.bestH.textContent=best; el.finalM.textContent=motesGot;
-  el.overTitle.textContent = h>0 && h>=best ? 'NEW BEST!' : 'WIPED OUT';
+  el.overTitle.textContent = h>0 && h>=best && h>0 ? 'NEW BEST!' : 'WIPED OUT';
   el.hud.classList.add('hidden'); el.speedwrap.classList.add('hidden');
   setTimeout(()=>el.over.classList.remove('hidden'),360);
 }
 el.startBtn.addEventListener('click',start);
 el.again.addEventListener('click',start);
 
+// ---------- particles ----------
 function burst(x,y,c){
   particles.push({x,y,vx:(Math.random()-.5)*420,vy:(Math.random()-.5)*420,life:1,c});
 }
 
+// ---------- loop ----------
 let last=performance.now();
 function frame(now){
   let dt=(now-last)/1000; last=now; if(dt>0.05)dt=0.05;
@@ -227,47 +237,65 @@ function frame(now){
 
 function update(dt){
   const o=orb;
+  // physics
   o.vy += G*dt;
-  if(holding && hookA){
-    ropeLen = Math.max(48, ropeLen - PULL*dt);
-  }
   o.x += o.vx*dt; o.y += o.vy*dt;
 
+  // rigid pendulum + active pumping
   if(holding && hookA){
-    const dx=o.x-hookA.x, dy=o.y-hookA.y;
-    const d=Math.hypot(dx,dy)||0.0001;
-    if(d>ropeLen){
-      const nx=dx/d, ny=dy/d;
-      o.x=hookA.x+nx*ropeLen; o.y=hookA.y+ny*ropeLen;
-      const radial=o.vx*nx+o.vy*ny;
-      o.vx-=radial*nx; o.vy-=radial*ny;
+    let dx=o.x-hookA.x, dy=o.y-hookA.y;
+    let d=Math.hypot(dx,dy)||0.0001;
+    // snap to exact rope length (rigid rod -> clean, controllable arc)
+    const nx=dx/d, ny=dy/d;
+    o.x=hookA.x+nx*ropeLen; o.y=hookA.y+ny*ropeLen;
+    // keep only tangential velocity
+    const radial=o.vx*nx+o.vy*ny;
+    o.vx-=radial*nx; o.vy-=radial*ny;
+    // tangent direction
+    const tx=-ny, ty=nx;
+    // steer: pump toward the side your finger is on (build the swing)
+    const toFx=pointer.x-o.x, toFy=pointer.y-o.y;
+    let dir=tx*toFx+ty*toFy;
+    dir = dir>0?1:(dir<0?-1:0);
+    if(dir!==0){
+      let tv=o.vx*tx+o.vy*ty;                 // current tangential speed (signed)
+      if(Math.abs(tv)<MAXTAN || Math.sign(tv)!==dir){
+        o.vx+=PUMP*dir*tx*dt; o.vy+=PUMP*dir*ty*dt;
+      }
     }
   }
 
   const speed=Math.hypot(o.vx,o.vy);
   const fast = speed>=FAST;
 
+  // trail
   o.trail.push({x:o.x,y:o.y,fast});
   if(o.trail.length>22) o.trail.shift();
 
+  // score = highest point reached (smaller y = higher)
   if(o.y<score) score=o.y;
 
+  // camera follows, easing
   const targetCam = o.y - H*0.62;
   camY += (targetCam-camY)*Math.min(1,dt*6);
 
   const depth=-score;
+  // kill line sits just below the camera and ratchets upward only — fall behind and you die
   const camBottom = camY + H;
   const desiredKill = camBottom + 30;
-  if(desiredKill < bottomKill) bottomKill = desiredKill;
+  if(desiredKill < bottomKill) bottomKill = desiredKill; // ratchet upward only
 
+  // generate world above
   while(topBand > camY - H*1.5) genBand();
 
+  // anchor decay
   for(const a of anchors){
     if(a.life!==Infinity){ a.life -= dt*1000; }
   }
   anchors = anchors.filter(a=> a.life>0 && a.y < camY+H+200);
   if(hookA && hookA.life<=0){ release(); }
 
+  // motes
   for(const m of motes){
     if(m.got) continue;
     if(Math.hypot(m.x-o.x,m.y-o.y) < MOTE_R+o.r+6){
@@ -280,6 +308,7 @@ function update(dt){
   motes = motes.filter(m=>!m.got && m.y<camY+H+120);
   if(comboTimer>0){ comboTimer-=dt; if(comboTimer<=0) combo=1; }
 
+  // hazards
   for(const hz of hazards){
     if(hz.dead) continue;
     hz.rot += (hz.saw?6: hz.dx*0.04)*dt + (hz.saw?0.12:0);
@@ -291,7 +320,7 @@ function update(dt){
         hz.dead=true;
         for(let i=0;i<14;i++) burst(hz.x,hz.y, hz.saw?'#ff5fa2':'#9d8bff');
         shake=8; flash=Math.min(1,flash+0.4);
-        o.vx*=0.86; o.vy*=0.86;
+        o.vx*=0.86; o.vy*=0.86; // small cost for smashing
       } else {
         return gameOver();
       }
@@ -299,17 +328,21 @@ function update(dt){
   }
   hazards = hazards.filter(h=>!h.dead && h.y<camY+H+200);
 
+  // walls (soft bounce)
   if(o.x<o.r){o.x=o.r; o.vx=Math.abs(o.vx)*0.5;}
   if(o.x>W-o.r){o.x=W-o.r; o.vx=-Math.abs(o.vx)*0.5;}
 
+  // death: fall below kill line
   if(o.y > bottomKill) return gameOver();
 
+  // particles
   for(const p of particles){ p.vy+=600*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.life-=dt*1.6; }
   particles=particles.filter(p=>p.life>0);
 
   if(shake>0) shake=Math.max(0,shake-dt*40);
   if(flash>0) flash=Math.max(0,flash-dt*2.2);
 
+  // hud
   el.height.innerHTML = Math.max(0,Math.floor(depth/10))+'<small>M</small>';
   const sp=Math.min(1,speed/FAST);
   el.speedfill.style.width=(sp*100)+'%';
@@ -319,13 +352,16 @@ function update(dt){
   else el.combo.classList.remove('on');
 }
 
+// ---------- draw ----------
 function draw(){
   ctx.save();
   let sx=0,sy=0;
   if(shake>0){ sx=(Math.random()-.5)*shake; sy=(Math.random()-.5)*shake; }
+  // background
   const g=ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,'#0a0e1f'); g.addColorStop(1,'#05060e');
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // parallax stars
   drawStars();
 
   ctx.translate(sx, sy - camY);
@@ -445,6 +481,7 @@ function drawOrb(){
   const o=orb;
   const speed=Math.hypot(o.vx,o.vy);
   const fast=speed>=FAST;
+  // trail
   for(let i=0;i<o.trail.length;i++){
     const p=o.trail[i]; const a=i/o.trail.length;
     ctx.globalAlpha=a*0.5;
@@ -452,6 +489,7 @@ function drawOrb(){
     ctx.beginPath(); ctx.arc(p.x,p.y,o.r*a*0.9,0,6.283); ctx.fill();
   }
   ctx.globalAlpha=1;
+  // body
   ctx.shadowColor=fast?'#ffb14d':'#7af6ff'; ctx.shadowBlur=fast?34:18;
   const grd=ctx.createRadialGradient(o.x,o.y,1,o.x,o.y,o.r*1.6);
   if(fast){ grd.addColorStop(0,'#fff'); grd.addColorStop(0.5,'#ffd36b'); grd.addColorStop(1,'#ff7a3c'); }
